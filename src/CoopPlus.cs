@@ -43,7 +43,7 @@ public partial class CoopCore
     int padSlot = -1;
     bool split;
     int view, prevView;                  // 1 = Player 1 frame, 2 = Player 2 frame
-    float camYaw, camPitch = -8f, camDist = 4.2f; int camDistStep = 1;
+    float camYaw, camPitch = -8f, camDist = 4.2f, collDist = 4.2f; int camDistStep = 1; Vector3 smoothPivot; bool smoothReady;
     DateTime lastLookInput = DateTime.MinValue;
     Vector3 camPos, camFwd, aimPoint;
     string taskKind = ""; Vector3 taskDir; int taskTime;
@@ -527,8 +527,8 @@ public partial class CoopCore
             if (wheelOpen) wheel.Draw();
             if (Game.GameTime < hitFlashUntil) Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 1f, 1f, 200, 0, 0, 70, false);
         }
-        if (canSplit) Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1);   // GTA's stars: hidden on every frame while split (no flicker)
-        if (canSplit && hudView == 1) { DrawP1Hud(); DrawReviveHint(); DrawIdentify(1); DrawP1Wanted(); }
+        if (canSplit && hudView == 2) Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1);   // GTA's real stars stay on Player 1's screen; hidden on Player 2's frames
+        if (canSplit && hudView == 1) { DrawP1Hud(); DrawReviveHint(); DrawIdentify(1); }
         if (!canSplit) DrawReviveHint();
         DrawActivityHud(); DrawBig();
         if (menu.Open && (!canSplit || hudView == menu.Owner)) menu.Draw();     // only on its owner's screen
@@ -829,9 +829,17 @@ public partial class CoopCore
         float viewYaw = camYaw + (v != null && v.Exists() && Held(Pad.RS) ? 180f : 0f);   // RS in a car = look behind
         camFwd = Forward(viewYaw, camPitch);
         Vector3 right = Vector3.Cross(camFwd, Vector3.WorldUp).Normalized;
+        // smooth the point the camera follows (damped, frame-rate independent) so it never jitters
+        float k = 1f - (float)Math.Exp(-dt * 16f);
+        smoothPivot = smoothReady && smoothPivot.DistanceTo(pivot) < 8f ? Vector3.Lerp(smoothPivot, pivot, k) : pivot; smoothReady = true;
+        pivot = smoothPivot;
         Vector3 want = pivot - camFwd * camDist + right * side;
         RaycastResult hit = World.Raycast(pivot, want, IntersectFlags.Map | IntersectFlags.Vehicles | IntersectFlags.Objects, (Entity)v ?? p2);
-        if (hit.DidHit) want = hit.HitPosition + (pivot - want).Normalized * 0.25f;
+        // walls: pull in instantly, ease back out (no popping in and out)
+        float allowed = hit.DidHit ? Math.Max(0.35f, hit.HitPosition.DistanceTo(pivot) - 0.25f) : camDist;
+        collDist = allowed < collDist ? allowed : collDist + (allowed - collDist) * Math.Min(1f, dt * 3f);
+        if (collDist > camDist) collDist = camDist;
+        want = pivot + (want - pivot).Normalized * collDist;
         camPos = want;
         if (firstPerson && (v == null || !v.Exists())) { camPos = FirstPersonPos(); }
         if (firstPerson && (v == null || !v.Exists())) { camPos = FirstPersonPos(); }

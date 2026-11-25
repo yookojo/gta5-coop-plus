@@ -17,6 +17,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <d3d11.h>
+#include <d3dcompiler.h>
 #include <dxgi1_5.h>
 #include <deque>
 #include <mutex>
@@ -35,6 +36,8 @@ __declspec(dllimport) void scriptWait(DWORD time);
 __declspec(dllimport) void presentCallbackRegister(void (*cb)(void*));
 __declspec(dllimport) void presentCallbackUnregister(void (*cb)(void*));
 
+static float g_sharp = 0.5f; static bool g_sharpUpscale = true;   // TV upscaler settings (TwoScreens.ini)
+static HANDLE g_tvWait;   // signalled when the TV swap chain has a buffer free (never wait on the game's time)
 struct SplitShm { volatile LONG enabled; volatile LONG cam; volatile LONG beat; volatile LONG layout; };   // layout: 0 two screens, 1 side by side, 2 top/bottom, 3 side by side (whole view)
 
 static HMODULE   g_self;
@@ -195,11 +198,18 @@ static bool EnsureResources(const D3D11_TEXTURE2D_DESC& d) {
     if (SUCCEEDED(hr)) hr = adapter->GetParent(__uuidof(IDXGIFactory2), (void**)&factory);
     if (SUCCEEDED(hr)) {
         DXGI_SWAP_CHAIN_DESC1 sd = {};
-        sd.Width = d.Width; sd.Height = d.Height; sd.Format = NoSrgb(d.Format);
-        sd.SampleDesc.Count = 1; sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; sd.BufferCount = 2;
+        UINT tvW = (UINT)(g_tvRect.right - g_tvRect.left), tvH = (UINT)(g_tvRect.bottom - g_tvRect.top);
+        bool native = g_sharpUpscale && tvW > d.Width && tvH > d.Height;
+        sd.Width = native ? tvW : d.Width; sd.Height = native ? tvH : d.Height; sd.Format = NoSrgb(d.Format);
+        sd.SampleDesc.Count = 1; sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT; sd.BufferCount = 3;
+        sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;   // lets us check for a free buffer without waiting
         sd.Scaling = DXGI_SCALING_STRETCH; sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD; sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
         hr = factory->CreateSwapChainForHwnd(g_dev, g_tvWnd, &sd, nullptr, nullptr, &g_tvChain);
-        if (SUCCEEDED(hr)) factory->MakeWindowAssociation(g_tvWnd, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES);
+        if (SUCCEEDED(hr)) {
+            factory->MakeWindowAssociation(g_tvWnd, DXGI_MWA_NO_ALT_ENTER | DXGI_MWA_NO_WINDOW_CHANGES);
+            IDXGISwapChain2* c2 = nullptr;
+            if (SUCCEEDED(g_tvChain->QueryInterface(__uuidof(IDXGISwapChain2), (void**)&c2))) { c2->SetMaximumFrameLatency(1); g_tvWait = c2->GetFrameLatencyWaitableObject(); c2->Release(); }
+        }
     }
     SafeRelease(factory); SafeRelease(adapter); SafeRelease(dxgiDev);
     if (FAILED(hr)) { Log("ERROR TV swap chain 0x%08lX (format %d)", hr, (int)d.Format); DropResources(); return false; }
@@ -250,10 +260,36 @@ float4 PS(float4 pos : SV_Position) : SV_Target {
     if (uv.y < 0 || uv.y > 1 || abs(p.x - hw) < 2) return float4(0, 0, 0, 1);
     return right ? P2t.SampleLevel(Lin, uv, 0) : Alt.SampleLevel(Lin, uv, 0);
 }
+
+// ---- TV upscale: Catmull-Rom bicubic (9 bilinear taps), clamped to the local range (no halos),
+// then contrast-adaptive sharpening (after AMD FidelityFX CAS).
+Texture2D<float4> Up : register(t3);
+cbuffer U : register(b1) { float2 SrcSize; float2 DstSize; float Sharp; float3 Pad2; };
+float3 Tap(float2 uv) { return Up.SampleLevel(Lin, uv, 0).rgb; }
+float3 CatRom(float2 uv) {
+    float2 p = uv * SrcSize, t1 = floor(p - 0.5) + 0.5, f = p - t1;
+    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f)), w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f)), w3 = f * f * (-0.5 + 0.5 * f);
+    float2 w12 = w1 + w2, t0 = (t1 - 1) / SrcSize, t3 = (t1 + 2) / SrcSize, t12 = (t1 + w2 / w12) / SrcSize;
+    float3 r = Tap(float2(t0.x, t0.y)) * w0.x * w0.y + Tap(float2(t12.x, t0.y)) * w12.x * w0.y + Tap(float2(t3.x, t0.y)) * w3.x * w0.y
+             + Tap(float2(t0.x, t12.y)) * w0.x * w12.y + Tap(float2(t12.x, t12.y)) * w12.x * w12.y + Tap(float2(t3.x, t12.y)) * w3.x * w12.y
+             + Tap(float2(t0.x, t3.y)) * w0.x * w3.y + Tap(float2(t12.x, t3.y)) * w12.x * w3.y + Tap(float2(t3.x, t3.y)) * w3.x * w3.y;
+    return r;
+}
+float4 PSUp(float4 pos : SV_Position) : SV_Target {
+    float2 uv = pos.xy / DstSize, px = 1.0 / SrcSize;
+    float3 c = CatRom(uv);
+    float3 n = Tap(uv + float2(0, -px.y)), s = Tap(uv + float2(0, px.y)), e = Tap(uv + float2(px.x, 0)), w = Tap(uv + float2(-px.x, 0));
+    float3 mn = min(min(min(n, s), min(e, w)), Tap(uv)), mx = max(max(max(n, s), max(e, w)), Tap(uv));
+    c = clamp(c, mn, mx);
+    float3 amp = sqrt(saturate(min(mn, 1.0 - mx) / max(mx, 1e-4)));
+    float3 wgt = -amp * lerp(0.125, 0.2, Sharp);
+    return float4(saturate((c + (n + s + e + w) * wgt) / (1.0 + 4.0 * wgt)), 1);
+}
 )";
 
 static bool g_gpuRoute = true;
-static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps;
+static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps, *g_psUp; static ID3D11Buffer* g_upCb;
 static ID3D11Buffer* g_cb[3][4]; static ID3D11SamplerState* g_samp; static ID3D11ShaderResourceView* g_p2SRV;
 static ID3D11Texture2D* g_src; static ID3D11ShaderResourceView *g_srcSRV, *g_altSRV; static ID3D11RenderTargetView* g_altRTV;
 static ID3D11Texture2D* g_lastP2; static ID3D11RenderTargetView* g_p2RTV;   // newest Player 2 picture, shown on every TV frame
@@ -274,6 +310,10 @@ static bool InitShaders() {
     bool ok = SUCCEEDED(g_dev->CreateVertexShader(vsb->GetBufferPointer(), vsb->GetBufferSize(), nullptr, &g_vs)) &&
               SUCCEEDED(g_dev->CreatePixelShader(psb->GetBufferPointer(), psb->GetBufferSize(), nullptr, &g_ps));
     vsb->Release(); psb->Release();
+    ID3DBlob* upb = nullptr;
+    if (ok && SUCCEEDED(compile(kShader, strlen(kShader), "route", nullptr, nullptr, "PSUp", "ps_5_0", (1 << 15) /* optimization level 3 */, 0, &upb, &err)))
+    { g_dev->CreatePixelShader(upb->GetBufferPointer(), upb->GetBufferSize(), nullptr, &g_psUp); upb->Release(); }
+    else { Log("TV upscaler unavailable: %s", err ? (const char*)err->GetBufferPointer() : "?"); SafeRelease(err); }
     for (int m = 0; m < 3 && ok; m++) for (int l = 0; l < 4 && ok; l++) {
         int data[4] = { m + 1, l, 0, 0 };
         D3D11_BUFFER_DESC bd = { 16, D3D11_USAGE_IMMUTABLE, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0 };
@@ -396,12 +436,37 @@ static bool GpuRoute(ID3D11Texture2D* bb, const D3D11_TEXTURE2D_DESC& d) {
     g_ctx->PSSetShaderResources(0, 3, all3); g_ctx->PSSetSamplers(0, 1, &g_samp); g_ctx->PSSetConstantBuffers(0, 1, &g_cb[2][lay]);
     g_ctx->Draw(3, 0);
     g_ctx->PSSetShaderResources(0, 3, none);
+    g_singleScreen = lay != 0;
+    bool upscaled = false;
+    // only touch the TV when it has a free buffer; otherwise skip this TV update instead of stalling the game
+    bool tvFree = !g_singleScreen && (!g_tvWait || WaitForSingleObject(g_tvWait, 0) == WAIT_OBJECT_0);
+    if (!g_singleScreen && !tvFree) g_tvDrops++;
+    if (tvFree) {
+        D3D11_TEXTURE2D_DESC td; tvbb->GetDesc(&td);
+        if (td.Width != d.Width || td.Height != d.Height) {
+            if (g_psUp) {
+                if (!g_upCb) {
+                    float cbd[8] = { (float)d.Width, (float)d.Height, (float)td.Width, (float)td.Height, g_sharp, 0, 0, 0 };
+                    D3D11_BUFFER_DESC bd = { 32, D3D11_USAGE_IMMUTABLE, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0 }; D3D11_SUBRESOURCE_DATA sdat = { cbd, 0, 0 };
+                    g_dev->CreateBuffer(&bd, &sdat, &g_upCb);
+                }
+                ID3D11RenderTargetView* tvRTV = nullptr;
+                if (g_upCb && SUCCEEDED(g_dev->CreateRenderTargetView(tvbb, nullptr, &tvRTV))) {
+                    D3D11_VIEWPORT tvp = { 0, 0, (float)td.Width, (float)td.Height, 0, 1 };
+                    g_ctx->RSSetViewports(1, &tvp); g_ctx->OMSetRenderTargets(1, &tvRTV, nullptr);
+                    g_ctx->PSSetShader(g_psUp, nullptr, 0); g_ctx->PSSetShaderResources(3, 1, &g_p2SRV); g_ctx->PSSetConstantBuffers(1, 1, &g_upCb);
+                    g_ctx->PSSetSamplers(0, 1, &g_samp); g_ctx->Draw(3, 0);
+                    ID3D11ShaderResourceView* n1 = nullptr; g_ctx->PSSetShaderResources(3, 1, &n1);
+                    tvRTV->Release(); upscaled = true;
+                }
+            }
+        }
+    }
     s.Restore(g_ctx);
 
     bbRTV->Release();
-    g_singleScreen = lay != 0;
-    if (!g_singleScreen) {
-        g_ctx->CopyResource(tvbb, g_lastP2);                   // TV always shows the newest Player 2 picture
+    if (tvFree) {
+        if (!upscaled) g_ctx->CopyResource(tvbb, g_lastP2);    // TV always shows the newest Player 2 picture
         HRESULT hr = g_tvChain->Present(0, DXGI_PRESENT_DO_NOT_WAIT);
         if (hr == DXGI_ERROR_WAS_STILL_DRAWING) g_tvDrops++;
     }
@@ -568,6 +633,8 @@ static void OnPresent(void* chainPtr) {
     }
 
     auto toTv = [&](ID3D11Texture2D* src) {
+        static bool resized = false;
+        if (!resized) { resized = true; g_tvChain->ResizeBuffers(0, d.Width, d.Height, DXGI_FORMAT_UNKNOWN, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT); }
         ID3D11Texture2D* tvbb = nullptr;
         if (SUCCEEDED(g_tvChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&tvbb))) {
             if (d.SampleDesc.Count > 1) g_ctx->ResolveSubresource(tvbb, 0, src, 0, NoSrgb(d.Format));
@@ -603,6 +670,8 @@ static void LoadSettings() {
     GetPrivateProfileStringW(L"TwoScreens", L"Monitor", L"auto", g_monitorName, 64, ini);
     g_mirror = GetPrivateProfileIntW(L"TwoScreens", L"MirrorWhenNotSplit", 0, ini) != 0;
     g_swap   = GetPrivateProfileIntW(L"TwoScreens", L"SwapPlayers", 0, ini) != 0;
+    g_sharpUpscale = GetPrivateProfileIntW(L"TwoScreens", L"SharpUpscale", 1, ini) != 0;
+    g_sharp = GetPrivateProfileIntW(L"TwoScreens", L"Sharpness", 50, ini) / 100.0f;
 }
 
 BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID) {

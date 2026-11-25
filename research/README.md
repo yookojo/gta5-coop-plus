@@ -20,3 +20,20 @@ Tools that only *read* the running game's memory, to check whether GTA V can dra
 Find the render phase list (data, so adding a phase is a data change rather than a code patch, which Arxan won't flag),
 create a second CViewportGame for Player 2, and add one scene render phase bound to it. If it draws, then two views
 in one frame are possible.
+
+## Experiment 1 (2026-11-25): do render phases draw from their own viewport? YES
+- `findrefs.ps1`: 29 render phase objects (22 classes), each keeps its viewport pointer at **+0x4C8**. The render
+  phase list is a plain array of 28 phase pointers (the frame's pipeline order); 22 phases use the game viewport.
+- `phasetest.ps1`: copied the game viewport while it held Player 2's camera (turned 180 degrees), turned split off,
+  then pointed one phase at a time at the copy for ~1 s (data write only, restored after each). No crash.
+- **Phase [4] (class +0x1A46DD0) = the main scene phase.** Redirected, the main screen showed the whole world from Player 2's
+  camera, complete (visibility is computed per phase from its own viewport), lit, with the normal HUD on top
+  (`phase4_from_player2_camera.png` vs `phase4_before.png`). Phases [18] and [21] redraw transparent parts (glass,
+  car interior) from the other camera; [18] also changes lighting. The rest showed no visible change.
+
+## What this means
+Drawing a second view in the same frame is a matter of running a second copy of the scene chain ([4], the lighting/
+transparent phases, post-processing) bound to Player 2's viewport and writing into its own render targets, then
+putting that picture on the TV. Not a renderer rewrite.
+Next: duplicate phase [4] as a new phase object with Player 2's viewport, give it its own G-buffer/colour targets,
+and add it to the list; then the lighting and post-processing phases.

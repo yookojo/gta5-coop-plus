@@ -527,7 +527,8 @@ public partial class CoopCore
             if (wheelOpen) wheel.Draw();
             if (Game.GameTime < hitFlashUntil) Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 1f, 1f, 200, 0, 0, 70, false);
         }
-        if (canSplit && hudView == 1) { DrawP1Hud(); DrawReviveHint(); DrawIdentify(1); }
+        if (canSplit) Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1);   // GTA's stars: hidden on every frame while split (no flicker)
+        if (canSplit && hudView == 1) { DrawP1Hud(); DrawReviveHint(); DrawIdentify(1); DrawP1Wanted(); }
         if (!canSplit) DrawReviveHint();
         DrawActivityHud(); DrawBig();
         if (menu.Open && (!canSplit || hudView == menu.Owner)) menu.Draw();     // only on its owner's screen
@@ -1353,6 +1354,7 @@ public partial class CoopCore
                     case "held": Log("held entities: " + held.Count); break;
                     case "layout": layout = int.Parse(a[1]); Log("layout " + layout); break;
                     case "revive": TryRevive(); break;
+                    case "p1wanted": Game.Player.WantedLevel = int.Parse(a[1]); break;
                     case "p1tp": { Vector3 to = new Vector3(F(a[1]), F(a[2]), F(a[3])); Function.Call(Hash.REQUEST_COLLISION_AT_COORD, to.X, to.Y, to.Z); Game.Player.Character.Position = to; nextCmdAt = Game.GameTime + 2500; catchUpAt = Game.GameTime + 1500; } break;
                     case "carhere": { Vector3 st = World.GetNextPositionOnStreet(p2.Position + new Vector3(0, 0, 0)); Vehicle cv = World.CreateVehicle(new Model(a.Length > 1 ? a[1] : "sultan"), st, 0f); if (cv != null) { cv.PlaceOnGround(); p2.Position = cv.GetOffsetPosition(new Vector3(-2.2f, 0, 0)); camYaw = cv.Heading; cv.MarkAsNoLongerNeeded(); Log("car placed on the street"); } } break;
                     case "fresh": StopActivities(); p2Wanted = 0; if (p2 != null && p2.Exists()) Despawn("reset for a test"); Spawn(a.Length > 1 ? int.Parse(a[1]) : 0); split = true; break;

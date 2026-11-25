@@ -126,8 +126,21 @@ public partial class CoopCore
     void DrawP2Wanted()
     {
         if (p2Wanted <= 0) return;
-        var te = new TextElement(string.Concat(Enumerable.Repeat("~ws~", p2Wanted)), new PointF(0.985f * GTA.UI.Screen.Width, (Game.Player.WantedLevel > 0 ? 0.105f : 0.058f) * GTA.UI.Screen.Height),
+        var te = new TextElement(string.Concat(Enumerable.Repeat("~ws~", p2Wanted)), new PointF(0.985f * GTA.UI.Screen.Width, 0.058f * GTA.UI.Screen.Height),
                                  0.62f, Color.White, GTA.UI.Font.ChaletLondon, Alignment.Right, false, true);
+        te.WrapWidth = 0.985f * GTA.UI.Screen.Width; te.Draw();
+    }
+
+    // Player 1's own stars, drawn only on Player 1's frames (GTA's star display is hidden on every frame
+    // while split, so it never flickers and never shows on Player 2's screen). Grey + blinking while the
+    // cops have lost sight of Player 1, like the game's own.
+    void DrawP1Wanted()
+    {
+        int lvl = Game.Player.WantedLevel; if (lvl <= 0) return;
+        bool grey = Function.Call<bool>(Hash.ARE_PLAYER_STARS_GREYED_OUT, Game.Player);
+        if (grey && (Game.GameTime / 400) % 2 == 0) return;
+        var te = new TextElement(string.Concat(Enumerable.Repeat("~ws~", lvl)), new PointF(0.985f * GTA.UI.Screen.Width, 0.058f * GTA.UI.Screen.Height),
+                                 0.62f, grey ? Color.FromArgb(255, 140, 140, 140) : Color.White, GTA.UI.Font.ChaletLondon, Alignment.Right, false, true);
         te.WrapWidth = 0.985f * GTA.UI.Screen.Width; te.Draw();
     }
 

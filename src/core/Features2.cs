@@ -125,9 +125,8 @@ public partial class CoopCore
     // GTA's own wanted-star icon (~ws~), top right under Player 2's cash, on Player 2's frames
     void DrawP2Wanted()
     {
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 1);   // Player 1's stars
         if (p2Wanted <= 0) return;
-        var te = new TextElement(string.Concat(Enumerable.Repeat("~ws~", p2Wanted)), new PointF(0.985f * GTA.UI.Screen.Width, 0.058f * GTA.UI.Screen.Height),
+        var te = new TextElement(string.Concat(Enumerable.Repeat("~ws~", p2Wanted)), new PointF(0.985f * GTA.UI.Screen.Width, (Game.Player.WantedLevel > 0 ? 0.105f : 0.058f) * GTA.UI.Screen.Height),
                                  0.62f, Color.White, GTA.UI.Font.ChaletLondon, Alignment.Right, false, true);
         te.WrapWidth = 0.985f * GTA.UI.Screen.Width; te.Draw();
     }

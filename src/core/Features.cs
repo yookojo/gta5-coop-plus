@@ -107,8 +107,6 @@ public partial class CoopCore
     void DrawP2Money()
     {
         LoadMoney();
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 3);   // Player 1's cash
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 4);   // Player 1's cash change
         var te = new TextElement("$" + p2Money.ToString("N0"), new PointF(0.985f * GTA.UI.Screen.Width, 0.015f * GTA.UI.Screen.Height), 0.62f,
                                  Color.White, GTA.UI.Font.Pricedown, Alignment.Right, false, true);
         te.WrapWidth = 0.985f * GTA.UI.Screen.Width; te.Draw();

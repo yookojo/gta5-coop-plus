@@ -1198,9 +1198,6 @@ public partial class CoopCore
         {
             Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 0.0035f, 0.0062f, 255, 255, 255, 230, false);
         }
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 2);   // Player 1's weapon icon
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 20);  // Player 1's weapon stats
-        Function.Call(Hash.HIDE_HUD_COMPONENT_THIS_FRAME, 22);  // Player 1's weapon wheel stats
         DrawNativeBars();
     }
 

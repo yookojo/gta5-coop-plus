@@ -53,7 +53,7 @@ public partial class CoopCore
     string lastSeatNote = "";
     bool directDriveOk = true; int directProbeStart = -1; int probedVehicle, lastDrivenVehicle;
 
-    Pad pad = new Pad(), prevPad = new Pad();
+    Pad pad = new Pad(), prevPad = new Pad(), lastUnmapped = new Pad(), prevUnmapped = new Pad();
     Pad virtualPad; int virtualUntil;
 
     MemoryMappedFile splitMap, blockMap; MemoryMappedViewAccessor splitView, blockView; int blockSeq, blockBeat;
@@ -217,6 +217,12 @@ public partial class CoopCore
         menu.Items.Add(new MenuItem { Label = "Activities", Help = "Deathmatch, survival, race", Change = d => BuildActivitiesMenu() });
         if (Alive(p2))
         {
+            menu.Items.Add(new MenuItem { Label = "Set up Player 2's buttons", Help = "Press the button you want for each action", Change = d => StartWizard() });
+            menu.Items.Add(new MenuItem { Label = "Reset Player 2's buttons", Change = d => ResetRemap() });
+        }
+        if (menu.Owner == 1) menu.Items.Add(new MenuItem { Label = "Keys", Help = "Change Player 1's co-op keys", Change = d => BuildKeysMenu() });
+        if (Alive(p2))
+        {
             menu.Items.Add(new MenuItem { Label = "Identify screens", Help = "Shows PLAYER 1 / PLAYER 2 on each screen", Change = d => identifyUntil = Game.GameTime + 4000 });
             menu.Items.Add(new MenuItem { Label = "Frame share", Help = "Who gets more frames per second", Value = () => FrameShareNames[frameShare], Change = d => { frameShare = (frameShare + (d < 0 ? 2 : 1)) % 3; Save("Screen", "FrameShare", frameShare); } });
             menu.Items.Add(new MenuItem { Label = "First person (Player 2)", Value = () => OnOff(firstPerson), Help = "Also: click the right stick", Change = d => firstPerson = !firstPerson });
@@ -271,9 +277,10 @@ public partial class CoopCore
     void ReadPad()
     {
         prevPad = pad;
-        if (virtualPad != null && Game.GameTime < virtualUntil) { pad = virtualPad; return; }
-        virtualPad = null;
-        pad = padSlot >= DirectPads.SlotBase ? dpads.Read(padSlot, stickDeadzone) : padSlot >= 0 ? xinput.Read(padSlot, stickDeadzone) : new Pad();
+        if (virtualPad != null && Game.GameTime < virtualUntil) pad = new Pad { LX = virtualPad.LX, LY = virtualPad.LY, RX = virtualPad.RX, RY = virtualPad.RY, LT = virtualPad.LT, RT = virtualPad.RT, Buttons = virtualPad.Buttons };
+        else { virtualPad = null; pad = padSlot >= DirectPads.SlotBase ? dpads.Read(padSlot, stickDeadzone) : padSlot >= 0 ? xinput.Read(padSlot, stickDeadzone) : new Pad(); }
+        prevUnmapped = lastUnmapped; lastUnmapped = new Pad { Buttons = pad.Buttons };
+        if (padSlot >= 0) pad = ApplyRemap(pad, padSlot);
     }
 
     bool Pressed(int b) { return (pad.Buttons & b) != 0 && (prevPad.Buttons & b) == 0; }
@@ -373,7 +380,7 @@ public partial class CoopCore
 
     // ---- called by the loader (CoopPlusLoader.cs)
     public void Tick() { OnTick(null, EventArgs.Empty); }
-    public void Key(KeyEventArgs e) { OnKeyDown(null, e); }
+    public void Key(KeyEventArgs e) { }   // keys are read directly every frame (PollKeys) - Script Hook V .NET drops some
     public void Unload(bool reloading)
     {
         if (reloading && Alive(p2))
@@ -441,7 +448,9 @@ public partial class CoopCore
     void Step()
     {
         if (pendingCmds.Count > 0 || Game.FrameCount % 15 == 0) RunCommands();
+        PollKeys(); CheckScreensOnce();
         ReadPad();
+        if (WizardInput(lastUnmapped, prevUnmapped)) { pad = new Pad(); prevPad = new Pad(); }
         // Player 2's menu: Back opens it; while it's open the pad drives the menu, not the character
         Pad raw = pad, rawPrev = lastRaw; lastRaw = raw;
         if (menu.Open && menu.Owner == 2) { menu.PadInput(raw, rawPrev); pad = new Pad(); prevPad = new Pad(); }
@@ -450,7 +459,7 @@ public partial class CoopCore
         if (!(menu.Open && menu.Owner == 2) && WeaponWheelInput(raw, rawPrev)) { pad = new Pad(); prevPad = new Pad(); }
         if (menu.Open && menu.Owner == 1)
         {
-            Function.Call(Hash.DISABLE_ALL_CONTROL_ACTIONS, 0);
+            Function.Call(Hash.DISABLE_ALL_CONTROL_ACTIONS, 0); Function.Call(Hash.DISABLE_ALL_CONTROL_ACTIONS, 2);
             Function.Call(Hash.ENABLE_CONTROL_ACTION, 0, 1, true); Function.Call(Hash.ENABLE_CONTROL_ACTION, 0, 2, true);
         }
         Ped p1 = Game.Player.Character;
@@ -523,7 +532,7 @@ public partial class CoopCore
         if (canSplit && hudView == 2)
         {
             if (down) DrawWastedNative(); else { DrawP2Hud(); DrawP2Money(); DrawP2Wanted(); }
-            DrawIdentify(2);
+            DrawIdentify(2); DrawWizard();
             if (wheelOpen) wheel.Draw();
             if (Game.GameTime < hitFlashUntil) Function.Call(Hash.DRAW_RECT, 0.5f, 0.5f, 1f, 1f, 200, 0, 0, 70, false);
         }
@@ -1362,6 +1371,9 @@ public partial class CoopCore
                     case "held": Log("held entities: " + held.Count); break;
                     case "layout": layout = int.Parse(a[1]); Log("layout " + layout); break;
                     case "revive": TryRevive(); break;
+                    case "wizard": StartWizard(); break;
+                    case "resetremap": ResetRemap(); break;
+                    case "padstate": Log("pad buttons " + pad.Buttons.ToString("X") + " raw " + lastUnmapped.Buttons.ToString("X")); break;
                     case "p1wanted": Game.Player.WantedLevel = int.Parse(a[1]); break;
                     case "p1tp": { Vector3 to = new Vector3(F(a[1]), F(a[2]), F(a[3])); Function.Call(Hash.REQUEST_COLLISION_AT_COORD, to.X, to.Y, to.Z); Game.Player.Character.Position = to; nextCmdAt = Game.GameTime + 2500; catchUpAt = Game.GameTime + 1500; } break;
                     case "carhere": { Vector3 st = World.GetNextPositionOnStreet(p2.Position + new Vector3(0, 0, 0)); Vehicle cv = World.CreateVehicle(new Model(a.Length > 1 ? a[1] : "sultan"), st, 0f); if (cv != null) { cv.PlaceOnGround(); p2.Position = cv.GetOffsetPosition(new Vector3(-2.2f, 0, 0)); camYaw = cv.Heading; cv.MarkAsNoLongerNeeded(); Log("car placed on the street"); } } break;
@@ -1563,7 +1575,9 @@ public class DirectPads
     [DllImport("winmm.dll", CharSet = CharSet.Unicode)] static extern int joyGetDevCapsW(IntPtr id, ref JC c, int size);
 
     public const int SlotBase = 10;
-    enum Kind { None, PlayStation, Nintendo }
+    enum Kind { None, PlayStation, Nintendo, Generic }
+    readonly ushort[] vids = new ushort[16], pids = new ushort[16];
+    public string DeviceId(int slot) { int i = slot - SlotBase; return i >= 0 && i < 16 ? "joy_" + vids[i].ToString("X4") + "_" + pids[i].ToString("X4") : "joy"; }
     readonly Kind[] kinds = new Kind[16]; int lastScan = -100000;
     readonly int[] uRest = new int[16], vRest = new int[16]; readonly bool[] calibrated = new bool[16];
 
@@ -1579,11 +1593,13 @@ public class DirectPads
             if (joyGetPosEx(i, ref j) != 0) continue;            // listed but not plugged in
             if (c.mid == 0x054C) kinds[i] = Kind.PlayStation;       // Sony
             else if (c.mid == 0x057E) kinds[i] = Kind.Nintendo;     // Nintendo (Switch Pro)
+            else if (c.mid != 0x045E) kinds[i] = Kind.Generic;      // any other gamepad (Microsoft pads are read through XInput)
+            vids[i] = c.mid; pids[i] = c.pid;
         }
     }
 
     public List<int> ConnectedSlots() { Scan(); var l = new List<int>(); for (int i = 0; i < 16; i++) if (kinds[i] != Kind.None) l.Add(SlotBase + i); return l; }
-    public string Describe(int slot) { int i = slot - SlotBase; return i >= 0 && i < 16 && kinds[i] == Kind.PlayStation ? "PlayStation" : "Switch"; }
+    public string Describe(int slot) { int i = slot - SlotBase; if (i < 0 || i >= 16) return "Controller"; return kinds[i] == Kind.PlayStation ? "PlayStation" : kinds[i] == Kind.Nintendo ? "Switch" : "Controller"; }
 
     public Pad Read(int slot, float dead)
     {
@@ -1597,6 +1613,11 @@ public class DirectPads
         {   // Square 0, Cross 1, Circle 2, Triangle 3, L1 4, R1 5, L2 6, R2 7, Share 8, Options 9, L3 10, R3 11, PS 12, Pad 13
             if (btn(1)) p.Buttons |= Pad.A; if (btn(2)) p.Buttons |= Pad.B; if (btn(0)) p.Buttons |= Pad.X; if (btn(3)) p.Buttons |= Pad.Y;
             if (btn(8) || btn(13)) p.Buttons |= Pad.Back; if (btn(9)) p.Buttons |= Pad.Start;
+        }
+        else if (kinds[i] == Kind.Generic)
+        {   // most generic pads: 0 south, 1 east, 2 west, 3 north, 8 select, 9 start (use the set-up wizard if yours differs)
+            if (btn(0)) p.Buttons |= Pad.A; if (btn(1)) p.Buttons |= Pad.B; if (btn(2)) p.Buttons |= Pad.X; if (btn(3)) p.Buttons |= Pad.Y;
+            if (btn(8)) p.Buttons |= Pad.Back; if (btn(9)) p.Buttons |= Pad.Start;
         }
         else
         {   // Switch Pro (positions, like Xbox): B 0 south, A 1 east, Y 2 west, X 3 north, L 4, R 5, ZL 6, ZR 7, - 8, + 9, LS 10, RS 11

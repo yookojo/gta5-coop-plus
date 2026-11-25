@@ -1,0 +1,33 @@
+fresh 0
+wait 1500
+wizard
+wait 900
+pad 120 0 0 0 0 0 0 2000
+wait 450
+pad 120 0 0 0 0 0 0 4000
+wait 450
+pad 120 0 0 0 0 0 0 8000
+wait 450
+pad 120 0 0 0 0 0 0 1000
+wait 450
+pad 120 0 0 0 0 0 0 100
+wait 450
+pad 120 0 0 0 0 0 0 200
+wait 450
+pad 120 0 0 0 0 0 0 40
+wait 450
+pad 120 0 0 0 0 0 0 80
+wait 450
+pad 120 0 0 0 0 0 0 20
+wait 450
+pad 120 0 0 0 0 0 0 10
+wait 450
+wait 500
+pad 600 0 0 0 0 0 0 2000
+wait 200
+padstate
+wait 600
+resetremap
+#expect controller remapped
+#expect pad buttons 1000 raw 2000
+#timeout 40

@@ -1,6 +1,6 @@
 # CoopPlus: local two-player co-op for GTA V
 
-Play GTA V story mode with a friend on the same PC. Player 1 uses keyboard and mouse. Player 2 uses a controller: Xbox, PlayStation (DualShock 4 / DualSense) or Switch Pro, with no DS4Windows needed. Each player has their own camera, aim, guns, cars, money, wanted level and minimap.
+Play GTA V story mode with a friend on the same PC. Player 1 uses keyboard and mouse. Player 2 uses a controller: Xbox, PlayStation (DualShock 4 / DualSense), Switch Pro, or any other gamepad Windows recognises, with no DS4Windows needed. Every button can be remapped. Each player has their own camera, aim, guns, cars, money, wanted level and minimap.
 
 **Two screens:** Player 1's view stays on the main monitor at its full refresh rate, and Player 2's view goes to a second monitor or TV at that screen's own resolution. **One screen:** the view splits side by side or top and bottom.
 
@@ -48,6 +48,13 @@ Play GTA V story mode with a friend on the same PC. Player 1 uses keyboard and m
 
 Settings are kept in `<GTA>\CoopPlus\CoopPlus.ini` and change from the in-game menu.
 
+**Controllers and keys**
+- **Remapping:** in the menu, choose **Set up Player 2's buttons** and press the button you want for each action. This works for any controller and is saved per controller. **Reset Player 2's buttons** restores the defaults.
+- **Player 1's co-op keys:** rebind them under **Keys** in the menu.
+- **Which controller is Player 2:** pick it under **Player 2 controller** in the menu, or press Back + Start on the controller that should join.
+- **Both players on controllers:** Player 1 plays on a controller GTA supports (Xbox-style, or PlayStation through DS4Windows), and CoopPlus hides Player 2's controller from the game.
+- **One monitor:** if only one screen is found, CoopPlus starts in side-by-side split.
+
 ## How it works
 - `TwoScreens.asi` (C++, D3D11, Script Hook V present callback). The game draws Player 1's and Player 2's cameras on alternate frames, and every frame carries a tiny colour tag. A pixel shader reads that tag on the GPU and sends each frame to the right place: the main window, a borderless window on the second screen, or one half of a single screen. Nothing waits on the GPU, so a stutter can never swap the screens. The same add-on hides Player 2's Xbox controller from the game so it only controls Player 2.
 - `CoopPlus.dll` (C#, Script Hook V .NET v3) is a small loader. It hot-reloads `CoopPlus\core\CoopPlusCore.dll`, which holds all the gameplay.
@@ -58,6 +65,7 @@ Settings are kept in `<GTA>\CoopPlus\CoopPlus.ini` and change from the in-game m
 - GTA only fully simulates the world around Player 1, so the area around a far-away Player 2 thins out. CoopPlus keeps cars and people near both players.
 - Story missions are made for one player. Player 2 tags along but isn't part of a mission's logic.
 - Two players only.
+- On Player 2's screen, a one-pixel edge of Player 1's own GTA health bar can show under Player 2's bar. GTA draws its minimap after anything a script can draw.
 
 ## Building from source
 - Needs Visual Studio 2022 Build Tools (C++ and the Windows SDK) and a GTA folder with `ScriptHookVDotNet3.dll`.

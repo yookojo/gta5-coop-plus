@@ -37,3 +37,16 @@ transparent phases, post-processing) bound to Player 2's viewport and writing in
 putting that picture on the TV. Not a renderer rewrite.
 Next: duplicate phase [4] as a new phase object with Player 2's viewport, give it its own G-buffer/colour targets,
 and add it to the list; then the lighting and post-processing phases.
+
+## Experiment 2 (2026-11-25): a cloned phase object runs and renders its own camera. YES
+`clonetest.ps1`: copied phase [4]'s object (0x800 bytes) into new memory, set its viewport (+0x4C8) to Player 2's camera, and swapped it into
+slot [13] for 1.5 s. The screen showed a complete, lit view from Player 2's camera (no missing geometry), so clones compute their own
+visibility. Problems: the clone draws into the SAME global render targets (G-buffer etc.), so it overwrote Player 1's picture; shadows
+(cascades follow the main camera) and glass were off. The atArray header for the phase list wasn't found by pointer search (the list may be
+inline in a manager object).
+
+## Plan to finish (not started)
+1. Run Player 2's cloned chain (shadows, scene [4], lighting/transparent [17-21], post-fx) BEFORE Player 1's in the list.
+2. Between the chains, copy the finished picture out on the render thread: a tiny custom phase whose BuildDrawList enqueues a generic draw
+   command (FiveM: EnqueueGenericDrawCommand; pattern still to be found for GTA V 1.0.3889) that runs a callback in our ASI.
+3. Exposure/TAA history are global and would still mix between the two chains: save/restore them in the same callbacks.

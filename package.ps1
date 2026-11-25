@@ -2,7 +2,7 @@
 param([string]$Version = (Get-Date -Format 'yyyy.MM.dd'))
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-cmd /c ""$(Join-Path $root 'src\build.bat')" 2>nul" | Out-Null; if ($LASTEXITCODE -ne 0) { throw 'C++ build failed' }
+$ErrorActionPreference = 'Continue'; cmd /c ""$(Join-Path $root 'src\build.bat')" 2>nul" 2>&1 | Out-Null; $built = $LASTEXITCODE; $ErrorActionPreference = 'Stop'; if ($built -ne 0) { throw 'C++ build failed' }
 & (Join-Path $root 'src\build_cs.ps1') | Out-Null
 $stage = Join-Path $root "dist\CoopPlus-$Version"; Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force (Join-Path $stage 'files') | Out-Null

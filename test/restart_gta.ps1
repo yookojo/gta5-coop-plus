@@ -29,6 +29,8 @@ public static class StoryClick {
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
   // clicks "STORY MODE" on the start screen (bottom-right tab at 1920x1080)
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowW(string c, string t);
+  public static IntPtr GameWindow() { return FindWindowW("grcWindow", null); }   // the game window (not Player 2's)
   public static void Click(IntPtr gta) {
     SetThreadDpiAwarenessContext((IntPtr)(-4));
     keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); SetForegroundWindow(gta);
@@ -47,7 +49,7 @@ while (((Get-Date) - $t0).TotalSeconds -lt $TimeoutSec) {
     $onStart = $gp -and $gp.MainWindowHandle -ne 0 -and ((Get-Date) - $gp.StartTime).TotalSeconds -gt 35
     if ($onStart -and ((Get-Date) - $lastClick).TotalSeconds -gt 10) {
         $l0 = Get-Content $log; $m0 = ($l0 | Select-String ([regex]::Escape("==== $Marker")) | Select-Object -Last 1).LineNumber
-        if (-not (($l0 | Select-Object -Skip $m0) -match 'core (re)?loaded|controllers read')) { [StoryClick]::Click($gp.MainWindowHandle); $lastClick = Get-Date; 'clicked Story Mode' }
+        if (-not (($l0 | Select-Object -Skip $m0) -match 'core (re)?loaded|controllers read')) { [StoryClick]::Click([StoryClick]::GameWindow()); $lastClick = Get-Date; 'clicked Story Mode' }
     }
     $err = Get-Process PlayGTAV -ErrorAction SilentlyContinue | Where-Object MainWindowTitle -eq 'Error'
     if ($err) { 'launch failed (Rockstar error window)'; exit 2 }

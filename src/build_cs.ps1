@@ -10,7 +10,7 @@ $csc = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\C
 $refs = @("-r:$fw\mscorlib.dll", "-r:$fw\System.dll", "-r:$fw\System.Core.dll", "-r:$fw\System.Drawing.dll", "-r:$fw\System.Windows.Forms.dll", "-r:$Game\ScriptHookVDotNet3.dll")
 $coreSrc = @((Join-Path $here 'CoopPlus.cs')) + @(Get-ChildItem (Join-Path $here 'core') -Filter *.cs -ErrorAction SilentlyContinue | ForEach-Object FullName)
 foreach ($p in @(@(@(Join-Path $here 'CoopPlusLoader.cs'), 'CoopPlus.dll'), @($coreSrc, 'CoopPlusCore.dll'))) {
-    & $csc -nologo -nowarn:CS0618,CS0414 -target:library -optimize+ -langversion:7.3 -nostdlib+ "-out:$out\$($p[1])" @refs @($p[0])
+    & $csc -nologo -nowarn:CS0618,CS0414 -target:library -optimize+ -deterministic -pathmap:A:\Tools\GTA-TwoScreens=src -langversion:7.3 -nostdlib+ "-out:$out\$($p[1])" @refs @($p[0])
     if ($LASTEXITCODE -ne 0) { throw "compile failed: $($p[0])" }
 }
 if ($Install) {

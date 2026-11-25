@@ -139,12 +139,25 @@ public partial class CoopCore
     }
 
     // ================================================================== one monitor / first run
-    bool screensChecked;
+    // The number of screens is checked every 2 s: with only one screen, "two screens" becomes side by side
+    // (not saved, so plugging the second screen back in returns to two screens).
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    bool screensChecked; int lastScreenCheck, monitorCount = 2;
+    int EffectiveLayout() { return layout == 0 && monitorCount < 2 ? 1 : layout; }
     void CheckScreensOnce()
     {
+        if (Game.GameTime - lastScreenCheck > 2000)
+        {
+            lastScreenCheck = Game.GameTime;
+            int n = Math.Max(1, GetSystemMetrics(80));   // SM_CMONITORS
+            if (n != monitorCount)
+            {
+                bool wasSingle = EffectiveLayout() != layout; monitorCount = n;
+                if (screensChecked && layout == 0) Notify(n < 2 ? "Second screen gone - split side by side on this screen" : "Second screen back - Player 2 is on it again");
+                Log("screens: " + n + " (layout " + layout + ", using " + EffectiveLayout() + ")");
+            }
+        }
         if (screensChecked) return; screensChecked = true;
-        int n = Screen.AllScreens.Length;
-        if (n < 2 && layout == 0) { layout = 1; Log("only one screen found - using side by side"); }
-        Notify("Co-op ready: ~b~" + menuKey + "~s~ menu, ~b~" + spawnKey + "~s~ add Player 2" + (n < 2 ? " (one screen: side by side)" : ""));
+        Notify("Co-op ready: ~b~" + menuKey + "~s~ menu, ~b~" + spawnKey + "~s~ add Player 2" + (monitorCount < 2 ? " (one screen: side by side)" : ""));
     }
 }

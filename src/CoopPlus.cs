@@ -119,7 +119,7 @@ public partial class CoopCore
         int shown = frameLag == 1 ? prevView : view;  // view of the frame being presented (normally one tick behind)
         splitView.Write(4, shown == 2 ? 2 : 1);
         splitView.Write(8, Game.FrameCount);
-        splitView.Write(12, layout);
+        splitView.Write(12, EffectiveLayout());
         splitView.Write(0, on ? 1 : 0);
     }
 

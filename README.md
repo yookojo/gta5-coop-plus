@@ -53,7 +53,7 @@ Settings are kept in `<GTA>\CoopPlus\CoopPlus.ini` and change from the in-game m
 - **Player 1's co-op keys:** rebind them under **Keys** in the menu.
 - **Which controller is Player 2:** pick it under **Player 2 controller** in the menu, or press Back + Start on the controller that should join.
 - **Both players on controllers:** Player 1 plays on a controller GTA supports (Xbox-style, or PlayStation through DS4Windows), and CoopPlus hides Player 2's controller from the game.
-- **One monitor:** if only one screen is found, CoopPlus starts in side-by-side split.
+- **Screens can change while you play.** Player 2's view goes to whichever screen GTA isn't on. If you plug or unplug a screen, CoopPlus picks again within a few seconds. With only one screen left, it splits side by side until a second screen comes back.
 
 ## How it works
 - `TwoScreens.asi` (C++, D3D11, Script Hook V present callback). The game draws Player 1's and Player 2's cameras on alternate frames, and every frame carries a tiny colour tag. A pixel shader reads that tag on the GPU and sends each frame to the right place: the main window, a borderless window on the second screen, or one half of a single screen. Nothing waits on the GPU, so a stutter can never swap the screens. The same add-on hides Player 2's Xbox controller from the game so it only controls Player 2.

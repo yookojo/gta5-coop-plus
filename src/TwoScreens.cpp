@@ -36,7 +36,10 @@ __declspec(dllimport) void scriptWait(DWORD time);
 __declspec(dllimport) void presentCallbackRegister(void (*cb)(void*));
 __declspec(dllimport) void presentCallbackUnregister(void (*cb)(void*));
 
+static HWND g_tvWnd;   // Player 2's window
+static volatile HMONITOR g_gameMon;   // monitor the game is on (from its swap chain's output)
 static float g_sharp = 0.5f; static bool g_sharpUpscale = true;   // TV upscaler settings (TwoScreens.ini)
+static ID3D11Buffer* g_upCb;   // TV upscaler constants (source/target sizes)
 static HANDLE g_tvWait;   // signalled when the TV swap chain has a buffer free (never wait on the game's time)
 struct SplitShm { volatile LONG enabled; volatile LONG cam; volatile LONG beat; volatile LONG layout; };   // layout: 0 two screens, 1 side by side, 2 top/bottom, 3 side by side (whole view)
 
@@ -66,7 +69,6 @@ static bool  g_tvVisible;
 static unsigned long long g_p1Frames, g_p2Frames, g_tvDrops;
 
 // TV window (own thread)
-static HWND   g_tvWnd;
 static HANDLE g_tvReady;
 static RECT   g_tvRect;
 #define WM_TV_SHOW (WM_APP + 1)
@@ -115,17 +117,41 @@ static void ScriptMain() {
 }
 
 // ---------------------------------------------------------------- TV window
-struct MonPick { RECT best; long long bestArea; bool found; const wchar_t* want; };
+struct MonPick { RECT best; long long bestArea; bool found; const wchar_t* want; HMONITOR gameMon; };
+// the game's own window (to keep Player 2 off whichever screen the game is on)
+static BOOL CALLBACK FindGameWnd(HWND h, LPARAM p) {
+    DWORD pid = 0; GetWindowThreadProcessId(h, &pid);
+    if (pid != GetCurrentProcessId() || h == g_tvWnd || !IsWindowVisible(h) || GetWindow(h, GW_OWNER)) return TRUE;
+    RECT r; GetWindowRect(h, &r); if (r.right - r.left < 640) return TRUE;
+    *(HWND*)p = h; return FALSE;
+}
 static BOOL CALLBACK MonEnum(HMONITOR m, HDC, LPRECT, LPARAM p) {
     MonPick* k = (MonPick*)p;
     MONITORINFOEXW mi = {}; mi.cbSize = sizeof(mi); GetMonitorInfoW(m, &mi);
     long long area = (long long)(mi.rcMonitor.right - mi.rcMonitor.left) * (mi.rcMonitor.bottom - mi.rcMonitor.top);
-    Log("monitor %ls %ldx%ld at %ld,%ld%s", mi.szDevice, mi.rcMonitor.right - mi.rcMonitor.left,
-        mi.rcMonitor.bottom - mi.rcMonitor.top, mi.rcMonitor.left, mi.rcMonitor.top, (mi.dwFlags & MONITORINFOF_PRIMARY) ? " (main)" : "");
     if (_wcsicmp(k->want, L"auto") == 0) {
-        if (!(mi.dwFlags & MONITORINFOF_PRIMARY) && area > k->bestArea) { k->best = mi.rcMonitor; k->bestArea = area; k->found = true; }
+        bool gameHere = k->gameMon ? (m == k->gameMon) : (mi.dwFlags & MONITORINFOF_PRIMARY) != 0;
+        if (!gameHere && area > k->bestArea) { k->best = mi.rcMonitor; k->bestArea = area; k->found = true; }
     } else if (_wcsicmp(k->want, mi.szDevice) == 0) { k->best = mi.rcMonitor; k->bestArea = area; k->found = true; }
     return TRUE;
+}
+
+// choose the second screen again (start-up and whenever screens change)
+static volatile bool g_tvMoved, g_noSecondScreen;
+static bool PickTvMonitor() {
+    MonPick k = {}; k.want = g_monitorName;
+    k.gameMon = g_gameMon;   // the monitor the game's own swap chain is showing on (set from the render thread)
+    EnumDisplayMonitors(nullptr, nullptr, MonEnum, (LPARAM)&k);
+    if (!k.found) { g_noSecondScreen = true; Log("no second screen right now"); return false; }
+    bool changed = memcmp(&k.best, &g_tvRect, sizeof(RECT)) != 0;
+    g_noSecondScreen = false;
+    if (changed) {
+        g_tvRect = k.best; g_tvMoved = true;
+        Log("Player 2's screen: %ldx%ld at %ld,%ld (the game is on another screen)", g_tvRect.right - g_tvRect.left, g_tvRect.bottom - g_tvRect.top, g_tvRect.left, g_tvRect.top);
+        if (g_tvWnd && IsWindowVisible(g_tvWnd))
+            SetWindowPos(g_tvWnd, HWND_TOPMOST, g_tvRect.left, g_tvRect.top, g_tvRect.right - g_tvRect.left, g_tvRect.bottom - g_tvRect.top, SWP_NOACTIVATE);
+    }
+    return true;
 }
 
 static LRESULT CALLBACK TvProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
@@ -137,16 +163,14 @@ static LRESULT CALLBACK TvProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     case WM_TV_HIDE:       ShowWindow(h, SW_HIDE); return 0;
     case WM_CLOSE:         return 0;                       // only GTA closing ends it
     case WM_ERASEBKGND:    return 1;
+    case WM_DISPLAYCHANGE: PickTvMonitor(); return 0;   // a screen was plugged in or removed
     }
     return DefWindowProcW(h, msg, w, l);
 }
 
 static DWORD WINAPI TvThread(LPVOID) {
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);   // real pixels on the 300% TV
-    MonPick k = {}; k.want = g_monitorName;
-    EnumDisplayMonitors(nullptr, nullptr, MonEnum, (LPARAM)&k);
-    if (!k.found) { Log("ERROR no second screen found (Monitor=%ls)", g_monitorName); SetEvent(g_tvReady); return 0; }
-    g_tvRect = k.best;
+    if (!PickTvMonitor()) { RECT r = { 0, 0, 1920, 1080 }; g_tvRect = r; }   // keep going: a screen may be plugged in later
     Log("TV screen: %ldx%ld at %ld,%ld", g_tvRect.right - g_tvRect.left, g_tvRect.bottom - g_tvRect.top, g_tvRect.left, g_tvRect.top);
 
     WNDCLASSEXW wc = { sizeof(wc) };
@@ -158,8 +182,17 @@ static DWORD WINAPI TvThread(LPVOID) {
                               nullptr, nullptr, g_self, nullptr);
     if (!g_tvWnd) Log("ERROR CreateWindow %lu", GetLastError());
     SetEvent(g_tvReady);
+    SetTimer(g_tvWnd, 1, 3000, nullptr);
     MSG m;
-    while (GetMessageW(&m, nullptr, 0, 0) > 0) { TranslateMessage(&m); DispatchMessageW(&m); }
+    while (GetMessageW(&m, nullptr, 0, 0) > 0) {
+        if (m.message == WM_TIMER && m.hwnd == g_tvWnd) {
+            PickTvMonitor();
+            RECT wr; GetWindowRect(g_tvWnd, &wr);   // put the window back if anything moved it
+            if (IsWindowVisible(g_tvWnd) && memcmp(&wr, &g_tvRect, sizeof(RECT)) != 0)
+                SetWindowPos(g_tvWnd, HWND_TOPMOST, g_tvRect.left, g_tvRect.top, g_tvRect.right - g_tvRect.left, g_tvRect.bottom - g_tvRect.top, SWP_NOACTIVATE);
+        }
+        TranslateMessage(&m); DispatchMessageW(&m);
+    }
     return 0;
 }
 
@@ -182,6 +215,7 @@ static DXGI_FORMAT NoSrgb(DXGI_FORMAT f) {
 static void DropResources() { SafeRelease(g_tvChain); SafeRelease(g_lastP1); g_haveP1 = false; }
 
 static bool EnsureResources(const D3D11_TEXTURE2D_DESC& d) {
+    if (g_tvMoved) { g_tvMoved = false; SafeRelease(g_tvChain); SafeRelease(g_upCb); if (g_tvWait) { CloseHandle(g_tvWait); g_tvWait = nullptr; } }
     if (g_tvChain && g_lastP1 && d.Width == g_desc.Width && d.Height == g_desc.Height && d.Format == g_desc.Format) return true;
     DropResources();
     g_desc = d;
@@ -289,7 +323,7 @@ float4 PSUp(float4 pos : SV_Position) : SV_Target {
 )";
 
 static bool g_gpuRoute = true;
-static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps, *g_psUp; static ID3D11Buffer* g_upCb;
+static ID3D11VertexShader* g_vs; static ID3D11PixelShader* g_ps, *g_psUp;
 static ID3D11Buffer* g_cb[3][4]; static ID3D11SamplerState* g_samp; static ID3D11ShaderResourceView* g_p2SRV;
 static ID3D11Texture2D* g_src; static ID3D11ShaderResourceView *g_srcSRV, *g_altSRV; static ID3D11RenderTargetView* g_altRTV;
 static ID3D11Texture2D* g_lastP2; static ID3D11RenderTargetView* g_p2RTV;   // newest Player 2 picture, shown on every TV frame
@@ -593,6 +627,15 @@ static void PatchXInputExports() {
 static void OnPresent(void* chainPtr) {
     if (g_failed) return;
     IDXGISwapChain* chain = (IDXGISwapChain*)chainPtr;
+    static int monCheck = 0;
+    if (monCheck++ % 120 == 0) {   // which monitor is the game on? (cheap, about once a second)
+        IDXGIOutput* out = nullptr;
+        if (SUCCEEDED(chain->GetContainingOutput(&out)) && out) {
+            DXGI_OUTPUT_DESC od;
+            if (SUCCEEDED(out->GetDesc(&od)) && od.Monitor != g_gameMon) { g_gameMon = od.Monitor; if (g_tvWnd) PostMessageW(g_tvWnd, WM_DISPLAYCHANGE, 0, 0); }
+            out->Release();
+        }
+    }
 
     bool active = false;
     if (g_shm && g_shm->enabled == 1) {
@@ -620,7 +663,7 @@ static void OnPresent(void* chainPtr) {
     // Preferred path: each frame carries a colour tag in its top-left corner (drawn by CoopPlus) and
     // the GPU routes it, so a stutter can never send a frame to the wrong screen.
     if (active && g_gpuRoute && d.SampleDesc.Count == 1 && GpuRoute(bb, d)) {
-        ShowTv(!g_singleScreen);
+        ShowTv(!g_singleScreen && !g_noSecondScreen);
         bb->Release();
         static DWORD lastStat2; DWORD now2 = GetTickCount();
         if (now2 - lastStat2 > 3000) {

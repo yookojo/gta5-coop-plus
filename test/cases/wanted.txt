@@ -1,0 +1,8 @@
+// Player 2 gets their own wanted level; police are sent after them; GTA's star icon on the TV
+fresh
+wait 500
+wanted 2
+wait 3500
+state
+#expect Player 2 wanted level 2
+#rec tv wanted_tv 1 1 3.0

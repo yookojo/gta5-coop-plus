@@ -1,0 +1,7 @@
+LIBRARY ScriptHookV.dll
+EXPORTS
+    ?scriptRegister@@YAXPEAUHINSTANCE__@@P6AXXZ@Z
+    ?scriptUnregister@@YAXPEAUHINSTANCE__@@@Z
+    ?scriptWait@@YAXK@Z
+    ?presentCallbackRegister@@YAXP6AXPEAX@Z@Z
+    ?presentCallbackUnregister@@YAXP6AXPEAX@Z@Z

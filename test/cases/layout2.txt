@@ -1,0 +1,5 @@
+layout 2
+wait 5000
+layout 0
+#rec mon ly2 1 1 2.5
+#timeout 20

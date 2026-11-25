@@ -1,0 +1,11 @@
+// hold LB opens the weapon wheel on the TV, move down, release equips
+fresh
+wait 500
+weapon
+pad 1600 0 0 0 0 0 0 100
+wait 700
+pad 900 0 0 0 -1 0 0 100
+wait 1100
+weapon
+#expect P2 weapon
+#rec tv wheel_tv 1 1 1.0

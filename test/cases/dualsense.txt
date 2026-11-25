@@ -1,0 +1,9 @@
+// Player 2 on a DualSense (Windows joystick 0 = slot 10) - no DS4Windows
+despawn
+wait 800
+spawn 10
+split on
+wait 1500
+state
+#expect Player 2 spawned, controller slot 10
+#expect pad 10

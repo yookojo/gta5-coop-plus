@@ -1,0 +1,12 @@
+// Player 2 flies a helicopter up and forward
+fresh
+tp
+wait 500
+heli
+wait 2500
+pad 4000 0 0.6 0 0 0 1 0
+wait 4200
+state
+#expect task fly
+#expect veh FROGGER
+#timeout 30

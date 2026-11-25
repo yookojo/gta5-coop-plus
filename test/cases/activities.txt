@@ -1,0 +1,16 @@
+// survival spawns a wave; race sets a finish; deathmatch starts
+fresh
+tp
+wait 500
+activity survival
+wait 5000
+activity race
+wait 1500
+activity dm
+wait 800
+activity stop
+#expect survival wave 1
+#expect race started
+#expect deathmatch started
+#rec tv surv_tv 1 1 4.5
+#timeout 30

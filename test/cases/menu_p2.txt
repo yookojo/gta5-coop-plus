@@ -1,0 +1,12 @@
+// Player 2 opens the co-op menu with Back; it must show on the TV only
+fresh
+split on
+wait 1500
+pad 120 0 0 0 0 0 0 20
+wait 600
+pad 120 0 0 0 0 0 0 2
+wait 2500
+pad 120 0 0 0 0 0 0 2000
+wait 500
+#rec tv menu_tv 1 2 3.2
+#rec mon menu_mon 1 2 3.6

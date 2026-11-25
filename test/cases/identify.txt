@@ -1,0 +1,7 @@
+// Identify screens: PLAYER 1 on the monitor, PLAYER 2 on the TV
+fresh
+split on
+identify
+wait 3000
+#rec tv id_tv 1 1 1.0
+#rec mon id_mon 1 1 1.8

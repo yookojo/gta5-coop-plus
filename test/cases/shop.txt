@@ -1,0 +1,16 @@
+// Player 2 buys armour from the shop in their menu
+fresh
+split on
+money 2000
+wait 800
+pad 120 0 0 0 0 0 0 20
+wait 500
+pad 120 0 0 0 0 0 0 1000
+wait 500
+pad 120 0 0 0 0 0 0 1000
+wait 500
+pad 120 0 0 0 0 0 0 2000
+wait 300
+pad 120 0 0 0 0 0 0 2000
+#expect bought body armour|bought armour
+#rec tv shop_tv 1 1 2.2

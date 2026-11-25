@@ -1,0 +1,11 @@
+// Player 2 goes down next to Player 1 and gets revived
+fresh
+tp
+wait 800
+kill
+wait 2500
+revive
+wait 1000
+state
+#expect Player 1 revived Player 2
+#expect hp 200

@@ -1,0 +1,20 @@
+// Player 2 gets into a car with Y, drives it, gets out (out on the street at Legion Square)
+fresh
+split on
+p1tp 228 -870 30.5
+wait 4000
+carhere sultan
+wait 1500
+pad 100 0 0 0 0 0 0 8000
+wait 5000
+state
+pad 3000 0 0 0 0 0 1 0
+wait 3200
+state
+pad 100 0 0 0 0 0 0 8000
+wait 3000
+state
+#timeout 45
+#expect P2 entering SULTAN seat Driver
+#expect veh SULTAN spd ([3-9]|\d\d)\.
+#expect veh - .*\| visible|task (exit|busy)

@@ -1,0 +1,9 @@
+src/out/
+state/
+old-stretched-mode/
+*.log
+*.obj
+*.pdb
+*.exp
+*.lib
+dist/

@@ -1,0 +1,14 @@
+// Player 2 collects health, armour and a weapon from the ground
+fresh
+split on
+wait 1500
+hurt
+pickup health
+wait 1200
+pickup armour
+wait 1200
+pickup pistol
+wait 1200
+#expect picked up Health
+#expect picked up Armour
+#expect picked up Pistol
